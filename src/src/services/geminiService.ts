@@ -1,6 +1,23 @@
 // No longer need to import GoogleGenerativeAI or API key in client
 // API calls are now handled by Netlify Functions for security
 
+// Helper to get the correct API base URL for different environments
+function getApiBaseUrl(): string {
+  // In production or when using netlify dev, use relative paths
+  if (typeof window !== "undefined") {
+    // Check if we're in development with RSBuild (localhost:3000)
+    if (
+      window.location.hostname === "localhost" &&
+      window.location.port === "3000"
+    ) {
+      // RSBuild dev server - proxy to netlify dev server
+      return "http://localhost:8888";
+    }
+  }
+  // Production or netlify dev - use relative paths
+  return "";
+}
+
 export interface QuizQuestion {
   question: string;
   options: string[];
@@ -20,17 +37,21 @@ export async function generateQuizQuestions(
   numQuestions: number = 10
 ): Promise<QuizData> {
   try {
-    const response = await fetch("/.netlify/functions/generate-quiz", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        topic,
-        difficulty,
-        numQuestions,
-      }),
-    });
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(
+      `${baseUrl}/.netlify/functions/generate-quiz`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic,
+          difficulty,
+          numQuestions,
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response
@@ -56,16 +77,20 @@ export async function generateHint(
   userAnswer: string
 ): Promise<string> {
   try {
-    const response = await fetch("/.netlify/functions/generate-hint", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        question,
-        userAnswer,
-      }),
-    });
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(
+      `${baseUrl}/.netlify/functions/generate-hint`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question,
+          userAnswer,
+        }),
+      }
+    );
 
     if (!response.ok) {
       console.error("Error generating hint:", response.status);
