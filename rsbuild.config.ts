@@ -12,7 +12,7 @@ export default defineConfig({
       index: "./src/entry.tsx",
     },
     define: {
-      __VITE_GEMINI_API_KEY__: JSON.stringify(process.env.VITE_GEMINI_API_KEY),
+      GEMINI_API_KEY__: JSON.stringify(process.env.GEMINI_API_KEY),
     },
   },
   tools: {

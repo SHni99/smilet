@@ -24,7 +24,7 @@ A smart quiz application powered by AI that generates personalized quiz question
    - Get your Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
    - Add your API key to `.env`:
      ```
-     VITE_GEMINI_API_KEY=your_actual_api_key_here
+     GEMINI_API_KEY=your_actual_api_key_here
      ```
 
 3. **Start the development server:**
