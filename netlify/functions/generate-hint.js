@@ -50,7 +50,7 @@ exports.handler = async (event, context) => {
 
     // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `Given this quiz question and the user's answer, provide a helpful hint (not the full answer):
 
