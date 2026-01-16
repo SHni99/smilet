@@ -54,7 +54,7 @@ exports.handler = async (event, context) => {
 
     // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.7,
@@ -66,38 +66,34 @@ exports.handler = async (event, context) => {
     const difficultyGuide = {
       easy: "basic concepts and simple definitions",
       medium: "practical applications and problem-solving",
-      hard: "advanced scenarios, calculations, and deep technical knowledge"
+      hard: "advanced scenarios, calculations, and deep technical knowledge",
     };
 
     const prompt = `Generate ${numQuestions} multiple choice quiz questions about "${topic}" at ${difficulty} level (${difficultyGuide[difficulty]}).
 
-Return ONLY valid JSON (no markdown, no code blocks):
-{
-  "questions": [
-    {
-      "question": "Question text",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": 0,
-      "explanation": "Brief explanation"
-    }
-  ],
-  "topic": "${topic}",
-  "difficulty": "${difficulty}"
-}
+CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no extra text before or after.
 
-Rules:
-- 4 options per question, correctAnswer is index 0-3
-- Keep explanations under 80 characters
-- Use only ASCII characters
-- Return pure JSON only`;
+{"questions":[{"question":"Question text","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Brief explanation"}],"topic":"${topic}","difficulty":"${difficulty}"}
+
+Requirements:
+- Exactly 4 options per question
+- correctAnswer must be 0, 1, 2, or 3
+- Keep all text short and simple
+- NO line breaks in questions or options
+- NO special characters or quotes inside strings
+- Keep explanations under 60 characters
+- Use simple ASCII only`;
 
     // Add timeout protection
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Generation timeout after 25 seconds')), 25000);
+      setTimeout(
+        () => reject(new Error("Generation timeout after 25 seconds")),
+        25000
+      );
     });
 
     const generationPromise = model.generateContent(prompt);
-    
+
     const result = await Promise.race([generationPromise, timeoutPromise]);
     const response = await result.response;
     const text = response.text();
@@ -119,8 +115,14 @@ Rules:
     jsonText = jsonText
       .replace(/[\u201C\u201D]/g, '"') // Replace smart quotes with regular quotes
       .replace(/[\u2018\u2019]/g, "'") // Replace smart single quotes
+      .replace(/[\u2013\u2014]/g, '-') // Replace em/en dashes
+      .replace(/[\u2026]/g, '...') // Replace ellipsis
+      .replace(/[\u00A0]/g, ' ') // Replace non-breaking spaces
+      .replace(/[^\x00-\x7F]/g, '') // Remove all non-ASCII characters
       .replace(/\n\s*\n/g, "\n") // Remove extra blank lines
       .replace(/,(\s*[}\]])/g, "$1") // Remove trailing commas
+      .replace(/\\n/g, ' ') // Replace literal \n with space
+      .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
 
     // Find the JSON object boundaries
@@ -138,8 +140,24 @@ Rules:
       quizData = JSON.parse(jsonText);
     } catch (parseError) {
       console.error("JSON Parse Error:", parseError);
-      console.error("Failed to parse text:", jsonText.substring(0, 1000));
-      throw new Error(`JSON parsing failed: ${parseError.message}`);
+      console.error("Failed to parse text (full):", jsonText);
+      
+      // Try to fix common JSON issues
+      try {
+        // Fix unescaped quotes in strings
+        let fixedJson = jsonText
+          .replace(/"([^"]*)":\s*"([^"]*)"/g, (match, key, value) => {
+            // Escape quotes inside the value
+            const escapedValue = value.replace(/"/g, '\\"');
+            return `"${key}": "${escapedValue}"`;
+          });
+        
+        quizData = JSON.parse(fixedJson);
+        console.log("Successfully parsed after fixing quotes");
+      } catch (retryError) {
+        console.error("Retry parse also failed:", retryError);
+        throw new Error(`JSON parsing failed: ${parseError.message}`);
+      }
     }
 
     // Validate the structure
