@@ -59,7 +59,7 @@ exports.handler = async (event, context) => {
     // Generate the quiz using the same logic as your original service
     const prompt = `Generate ${numQuestions} multiple choice quiz questions about "${topic}" with ${difficulty} difficulty.
 
-Please return the response in this exact JSON format:
+You MUST return ONLY valid JSON in this exact format (no markdown, no extra text):
 {
   "questions": [
     {
@@ -98,21 +98,28 @@ General Requirements:
 - Each question should have exactly 4 options
 - correctAnswer should be the index (0-3) of the correct option
 - Questions should be engaging and educational
-- Explanations should be concise but informative
+- Explanations should be concise but informative (max 100 characters)
 - Questions should cover different aspects of the topic
 - Avoid overly obvious or trick questions
 - For hard difficulty: Include at least 3-4 calculation/analytical questions
 - Ensure mathematical accuracy for any numerical questions
+- Use only standard ASCII characters in your response
+- Do not include any special formatting or markdown
 
 Topic: ${topic}
 Difficulty: ${difficulty}
-Number of questions: ${numQuestions}`;
+Number of questions: ${numQuestions}
+
+Return ONLY the JSON object, nothing else.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
-    // Clean up the response text to extract JSON (same logic as original)
+    // Log the raw response for debugging
+    console.log("Raw AI Response:", text.substring(0, 500));
+
+    // Clean up the response text to extract JSON
     let jsonText = text.trim();
 
     // Remove markdown code blocks if present
@@ -138,7 +145,16 @@ Number of questions: ${numQuestions}`;
       jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
     }
 
-    const quizData = JSON.parse(jsonText);
+    console.log("Cleaned JSON text:", jsonText.substring(0, 500));
+
+    let quizData;
+    try {
+      quizData = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      console.error("Failed to parse text:", jsonText.substring(0, 1000));
+      throw new Error(`JSON parsing failed: ${parseError.message}`);
+    }
 
     // Validate the structure
     if (!quizData.questions || !Array.isArray(quizData.questions)) {
@@ -166,11 +182,13 @@ Number of questions: ${numQuestions}`;
     };
   } catch (error) {
     console.error("Error generating quiz:", error);
+    console.error("Error stack:", error.stack);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         error: `Failed to generate quiz: ${error.message}`,
+        details: error.stack,
       }),
     };
   }

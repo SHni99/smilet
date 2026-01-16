@@ -57,6 +57,7 @@ export async function generateQuizQuestions(
       const errorData = await response
         .json()
         .catch(() => ({ error: "Unknown error" }));
+      console.error("Quiz generation error:", errorData);
       throw new Error(errorData.error || `HTTP ${response.status}`);
     }
 
