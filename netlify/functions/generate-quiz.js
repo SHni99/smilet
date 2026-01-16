@@ -104,28 +104,36 @@ Rules:
 
     const result = await Promise.race([generationPromise, timeoutPromise]);
     const response = await result.response;
-    
+
     // Check if response was complete
     const candidates = result.response.candidates;
     if (candidates && candidates[0]) {
       const finishReason = candidates[0].finishReason;
       console.log("Finish reason:", finishReason);
-      
+
       if (finishReason && finishReason !== "STOP") {
-        console.warn("Response may be incomplete. Finish reason:", finishReason);
-        
+        console.warn(
+          "Response may be incomplete. Finish reason:",
+          finishReason
+        );
+
         if (finishReason === "MAX_TOKENS") {
-          throw new Error("Response truncated due to token limit. Try reducing the number of questions.");
+          throw new Error(
+            "Response truncated due to token limit. Try reducing the number of questions."
+          );
         }
       }
     }
-    
+
     const text = response.text();
 
     // Since we're using responseMimeType: "application/json", the response should be valid JSON
     console.log("Raw AI Response length:", text.length);
     console.log("First 500 chars:", text.substring(0, 500));
-    console.log("Last 100 chars:", text.substring(Math.max(0, text.length - 100)));
+    console.log(
+      "Last 100 chars:",
+      text.substring(Math.max(0, text.length - 100))
+    );
 
     let quizData;
     try {
@@ -134,7 +142,7 @@ Rules:
       console.log("Successfully parsed JSON directly");
     } catch (directParseError) {
       console.log("Direct parse failed, attempting cleanup...");
-      
+
       // Fallback: Clean up the response text to extract JSON
       let jsonText = text.trim();
 
@@ -153,7 +161,10 @@ Rules:
         jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
       }
 
-      console.log("Cleaned JSON (first 500 chars):", jsonText.substring(0, 500));
+      console.log(
+        "Cleaned JSON (first 500 chars):",
+        jsonText.substring(0, 500)
+      );
 
       quizData = JSON.parse(jsonText);
       console.log("Successfully parsed after cleanup");
