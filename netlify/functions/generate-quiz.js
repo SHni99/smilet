@@ -54,65 +54,51 @@ exports.handler = async (event, context) => {
 
     // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+      },
+    });
 
-    // Generate the quiz using the same logic as your original service
-    const prompt = `Generate ${numQuestions} multiple choice quiz questions about "${topic}" with ${difficulty} difficulty.
+    // Simplified prompt that's faster to process
+    const difficultyGuide = {
+      easy: "basic concepts and simple definitions",
+      medium: "practical applications and problem-solving",
+      hard: "advanced scenarios, calculations, and deep technical knowledge"
+    };
 
-You MUST return ONLY valid JSON in this exact format (no markdown, no extra text):
+    const prompt = `Generate ${numQuestions} multiple choice quiz questions about "${topic}" at ${difficulty} level (${difficultyGuide[difficulty]}).
+
+Return ONLY valid JSON (no markdown, no code blocks):
 {
   "questions": [
     {
-      "question": "Question text here",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "question": "Question text",
+      "options": ["A", "B", "C", "D"],
       "correctAnswer": 0,
-      "explanation": "Brief explanation of why this answer is correct"
+      "explanation": "Brief explanation"
     }
   ],
   "topic": "${topic}",
   "difficulty": "${difficulty}"
 }
 
-DIFFICULTY-SPECIFIC REQUIREMENTS:
+Rules:
+- 4 options per question, correctAnswer is index 0-3
+- Keep explanations under 80 characters
+- Use only ASCII characters
+- Return pure JSON only`;
 
-EASY Level:
-- Basic concepts and definitions
-- Simple terminology questions
-- Straightforward scenarios
-- Common knowledge in the field
+    // Add timeout protection
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Generation timeout after 25 seconds')), 25000);
+    });
 
-MEDIUM Level:
-- Application of concepts to real scenarios
-- Problem-solving with multiple steps
-- Best practices and methodologies
-- Comparative analysis between options
-
-HARD Level:
-- Complex calculations and formulas
-- Advanced technical scenarios requiring deep expertise
-- Performance metrics, optimization problems
-- Multi-variable problem solving
-- Industry-specific edge cases and advanced techniques
-
-General Requirements:
-- Each question should have exactly 4 options
-- correctAnswer should be the index (0-3) of the correct option
-- Questions should be engaging and educational
-- Explanations should be concise but informative (max 100 characters)
-- Questions should cover different aspects of the topic
-- Avoid overly obvious or trick questions
-- For hard difficulty: Include at least 3-4 calculation/analytical questions
-- Ensure mathematical accuracy for any numerical questions
-- Use only standard ASCII characters in your response
-- Do not include any special formatting or markdown
-
-Topic: ${topic}
-Difficulty: ${difficulty}
-Number of questions: ${numQuestions}
-
-Return ONLY the JSON object, nothing else.`;
-
-    const result = await model.generateContent(prompt);
+    const generationPromise = model.generateContent(prompt);
+    
+    const result = await Promise.race([generationPromise, timeoutPromise]);
     const response = await result.response;
     const text = response.text();
 
