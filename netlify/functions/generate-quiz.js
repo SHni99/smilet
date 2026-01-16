@@ -53,14 +53,14 @@ exports.handler = async (event, context) => {
     }
 
     // Initialize Gemini AI
+    // Using gemini-2.0-flash for higher free tier limits (1500 req/day vs 20 for 2.5)
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       generationConfig: {
         temperature: 0.5,
         maxOutputTokens: 4096,
         responseMimeType: "application/json",
-        candidateCount: 1,
       },
     });
 
