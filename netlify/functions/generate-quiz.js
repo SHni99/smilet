@@ -57,8 +57,10 @@ exports.handler = async (event, context) => {
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2048,
+        temperature: 0.5,
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+        candidateCount: 1,
       },
     });
 
@@ -66,23 +68,29 @@ exports.handler = async (event, context) => {
     const difficultyGuide = {
       easy: "basic concepts and simple definitions",
       medium: "practical applications and problem-solving",
-      hard: "advanced scenarios, calculations, and deep technical knowledge",
+      hard: "advanced scenarios and calculations",
     };
 
-    const prompt = `Generate ${numQuestions} multiple choice quiz questions about "${topic}" at ${difficulty} level (${difficultyGuide[difficulty]}).
+    const prompt = `Create ${numQuestions} quiz questions about ${topic} (${difficulty} level: ${difficultyGuide[difficulty]}).
 
-CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no extra text before or after.
+Return valid JSON with this structure:
+{
+  "questions": [
+    {
+      "question": "question text here",
+      "options": ["option 1", "option 2", "option 3", "option 4"],
+      "correctAnswer": 0,
+      "explanation": "why this is correct"
+    }
+  ],
+  "topic": "${topic}",
+  "difficulty": "${difficulty}"
+}
 
-{"questions":[{"question":"Question text","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Brief explanation"}],"topic":"${topic}","difficulty":"${difficulty}"}
-
-Requirements:
-- Exactly 4 options per question
-- correctAnswer must be 0, 1, 2, or 3
-- Keep all text short and simple
-- NO line breaks in questions or options
-- NO special characters or quotes inside strings
-- Keep explanations under 60 characters
-- Use simple ASCII only`;
+Rules:
+- correctAnswer is index 0-3
+- Keep text concise
+- No special formatting`;
 
     // Add timeout protection
     const timeoutPromise = new Promise((_, reject) => {
@@ -96,68 +104,59 @@ Requirements:
 
     const result = await Promise.race([generationPromise, timeoutPromise]);
     const response = await result.response;
+    
+    // Check if response was complete
+    const candidates = result.response.candidates;
+    if (candidates && candidates[0]) {
+      const finishReason = candidates[0].finishReason;
+      console.log("Finish reason:", finishReason);
+      
+      if (finishReason && finishReason !== "STOP") {
+        console.warn("Response may be incomplete. Finish reason:", finishReason);
+        
+        if (finishReason === "MAX_TOKENS") {
+          throw new Error("Response truncated due to token limit. Try reducing the number of questions.");
+        }
+      }
+    }
+    
     const text = response.text();
 
-    // Log the raw response for debugging
-    console.log("Raw AI Response:", text.substring(0, 500));
-
-    // Clean up the response text to extract JSON
-    let jsonText = text.trim();
-
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith("```json")) {
-      jsonText = jsonText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-    } else if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/^```\s*/, "").replace(/\s*```$/, "");
-    }
-
-    // Additional cleanup for common AI response issues
-    jsonText = jsonText
-      .replace(/[\u201C\u201D]/g, '"') // Replace smart quotes with regular quotes
-      .replace(/[\u2018\u2019]/g, "'") // Replace smart single quotes
-      .replace(/[\u2013\u2014]/g, '-') // Replace em/en dashes
-      .replace(/[\u2026]/g, '...') // Replace ellipsis
-      .replace(/[\u00A0]/g, ' ') // Replace non-breaking spaces
-      .replace(/[^\x00-\x7F]/g, '') // Remove all non-ASCII characters
-      .replace(/\n\s*\n/g, "\n") // Remove extra blank lines
-      .replace(/,(\s*[}\]])/g, "$1") // Remove trailing commas
-      .replace(/\\n/g, ' ') // Replace literal \n with space
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
-
-    // Find the JSON object boundaries
-    const jsonStart = jsonText.indexOf("{");
-    const jsonEnd = jsonText.lastIndexOf("}");
-
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
-    }
-
-    console.log("Cleaned JSON text:", jsonText.substring(0, 500));
+    // Since we're using responseMimeType: "application/json", the response should be valid JSON
+    console.log("Raw AI Response length:", text.length);
+    console.log("First 500 chars:", text.substring(0, 500));
+    console.log("Last 100 chars:", text.substring(Math.max(0, text.length - 100)));
 
     let quizData;
     try {
-      quizData = JSON.parse(jsonText);
-    } catch (parseError) {
-      console.error("JSON Parse Error:", parseError);
-      console.error("Failed to parse text (full):", jsonText);
+      // Try parsing directly first
+      quizData = JSON.parse(text);
+      console.log("Successfully parsed JSON directly");
+    } catch (directParseError) {
+      console.log("Direct parse failed, attempting cleanup...");
       
-      // Try to fix common JSON issues
-      try {
-        // Fix unescaped quotes in strings
-        let fixedJson = jsonText
-          .replace(/"([^"]*)":\s*"([^"]*)"/g, (match, key, value) => {
-            // Escape quotes inside the value
-            const escapedValue = value.replace(/"/g, '\\"');
-            return `"${key}": "${escapedValue}"`;
-          });
-        
-        quizData = JSON.parse(fixedJson);
-        console.log("Successfully parsed after fixing quotes");
-      } catch (retryError) {
-        console.error("Retry parse also failed:", retryError);
-        throw new Error(`JSON parsing failed: ${parseError.message}`);
+      // Fallback: Clean up the response text to extract JSON
+      let jsonText = text.trim();
+
+      // Remove markdown code blocks if present
+      if (jsonText.startsWith("```json")) {
+        jsonText = jsonText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+      } else if (jsonText.startsWith("```")) {
+        jsonText = jsonText.replace(/^```\s*/, "").replace(/\s*```$/, "");
       }
+
+      // Find the JSON object boundaries
+      const jsonStart = jsonText.indexOf("{");
+      const jsonEnd = jsonText.lastIndexOf("}");
+
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+      }
+
+      console.log("Cleaned JSON (first 500 chars):", jsonText.substring(0, 500));
+
+      quizData = JSON.parse(jsonText);
+      console.log("Successfully parsed after cleanup");
     }
 
     // Validate the structure
